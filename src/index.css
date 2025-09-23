@@ -1,0 +1,45 @@
+/* 전체 화면 채우기 & 기본 컬러 */
+html,
+body,
+#root {
+    height: 100%;
+}
+body {
+    margin: 0;
+    background: #0b0b0f; /* 페이지 배경 */
+    color: #e5e7eb;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+}
+
+/* 전체 화면 레이아웃 컨테이너 */
+.fullscreen {
+    min-height: 100dvh; /* 모바일 주소창 높이 대응 */
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center; /* 중앙 정렬 */
+    gap: 16px;
+    padding: 0; /* 여백 제거 */
+}
+
+/* 스펙트럼 영역: 화면 가로를 넓게 쓰되, 너무 커지지 않게 한도 설정 */
+.spectrum-wrap {
+    width: min(1400px, 96vw); /* 거의 풀폭 */
+}
+
+/* 버튼/텍스트 영역도 폭을 맞춤 */
+.panel,
+.transcript {
+    width: min(1200px, 92vw);
+}
+
+/* 텍스트 박스 스타일 유지(원하는 대로 조절 가능) */
+.transcript {
+    padding: 14px 16px;
+    background: #111827;
+    color: #e5e7eb;
+    border-radius: 12px;
+    min-height: 88px;
+    line-height: 1.7;
+}
