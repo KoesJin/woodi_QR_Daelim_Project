@@ -1,11 +1,14 @@
-import Dictaphone from './Dictaphone';
+import Dictaphone from "./Dictaphone";
+import { usePageLock } from "./hooks/usePageLock";
 
 function App() {
-    return (
-        <div>
-            <Dictaphone />
-        </div>
-    );
+  usePageLock('woodi-main');
+
+  return (
+    <div>
+      <Dictaphone />
+    </div>
+  );
 }
 
 export default App;
