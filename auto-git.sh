@@ -33,13 +33,17 @@ git add .
 echo -e "${BLUE}💾 커밋 생성...${NC}"
 git commit -m "$COMMIT_MSG"
 
-# 4. 원격 저장소에서 최신 변경사항 가져오기
-echo -e "${BLUE}⬇️ 원격 저장소에서 최신 변경사항 가져오기...${NC}"
-git pull origin main
+# 4. 현재 브랜치 확인
+CURRENT_BRANCH=$(git branch --show-current)
+echo -e "${BLUE}🌿 현재 브랜치: $CURRENT_BRANCH${NC}"
 
-# 5. 로컬 변경사항 푸시
+# 5. 원격 저장소에서 최신 변경사항 가져오기
+echo -e "${BLUE}⬇️ 원격 저장소에서 최신 변경사항 가져오기...${NC}"
+git pull origin $CURRENT_BRANCH
+
+# 6. 로컬 변경사항 푸시
 echo -e "${BLUE}⬆️ 로컬 변경사항 푸시...${NC}"
-git push origin main
+git push origin $CURRENT_BRANCH
 
 # 6. 완료 메시지
 echo -e "${GREEN}✅ 모든 작업이 완료되었습니다!${NC}"
