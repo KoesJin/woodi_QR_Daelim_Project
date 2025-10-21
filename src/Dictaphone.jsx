@@ -1,4 +1,4 @@
-import React, { useState, useRef } from 'react';
+import React, { useState, useRef, useCallback } from 'react';
 import AudioCircleSpectrum from './AudioCircleSpectrum';
 import './index.css';
 
@@ -27,6 +27,19 @@ export default function Dictaphone() {
      */
     const startListening = async () => {
         setFinalText(''); // 이전 텍스트를 초기화
+
+        // 이전 녹음이 있다면 정리
+        if (mediaRecorderRef.current) {
+            try {
+                if (mediaRecorderRef.current.state === 'recording') {
+                    mediaRecorderRef.current.stop();
+                }
+            } catch {
+                // 이전 녹음 정리 중 에러 무시
+            }
+            mediaRecorderRef.current = null;
+        }
+
         try {
             // 브라우저에서 마이크 접근 권한을 요청합니다.
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
@@ -51,29 +64,37 @@ export default function Dictaphone() {
              * 3. 채팅 메시지 목록과 UI를 업데이트합니다.
              */
             mediaRecorder.onstop = async () => {
-                // 녹음한 데이터들을 하나의 Blob으로 만듭니다.
-                const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
-                // ElevenLabs API 호출: 음성을 텍스트로 변환
-                const transcript = await transcribeAudio(audioBlob);
-                if (transcript) {
-                    // 텍스트를 화면에 표시
-                    setFinalText(transcript);
-                    // 채팅 목록에 사용자 메시지로 추가
-                    setMessages((prev) => [...prev, { type: 'user', text: transcript }]);
+                try {
+                    // 녹음한 데이터들을 하나의 Blob으로 만듭니다.
+                    const audioBlob = new Blob(audioChunksRef.current, { type: 'audio/webm' });
+                    // ElevenLabs API 호출: 음성을 텍스트로 변환
+                    const transcript = await transcribeAudio(audioBlob);
+                    if (transcript) {
+                        console.log('🎤 인식된 음성:', transcript);
+                        // 텍스트를 화면에 표시
+                        setFinalText(transcript);
+                        // 채팅 목록에 사용자 메시지로 추가
+                        setMessages((prev) => [...prev, { type: 'user', text: transcript }]);
 
-                    // 기존 서버(API_URL)로 질문을 전송하여 AI 응답을 받아옵니다.
-                    const response = await sendToAPI(transcript);
-                    if (response) {
-                        setMessages((prev) => [...prev, { type: 'bot', text: response }]);
+                        // 기존 서버(API_URL)로 질문을 전송하여 AI 응답을 받아옵니다.
+                        const response = await sendToAPI(transcript);
+                        if (response) {
+                            setMessages((prev) => [...prev, { type: 'bot', text: response }]);
+                        }
                     }
+                } catch {
+                    // 에러 처리
+                } finally {
+                    // MediaRecorder 정리
+                    mediaRecorderRef.current = null;
                 }
             };
 
             // 녹음 시작
             mediaRecorder.start();
             setListening(true);
-        } catch (err) {
-            console.error('마이크 접근 실패:', err);
+        } catch {
+            // 마이크 접근 실패
         }
     };
 
@@ -82,12 +103,22 @@ export default function Dictaphone() {
      * MediaRecorder.stop()을 호출하면 onstop 이벤트 핸들러가 실행되어
      * 녹음 데이터 전송과 후처리가 진행됩니다.
      */
-    const stopListening = () => {
-        if (mediaRecorderRef.current) {
-            mediaRecorderRef.current.stop();
-        }
+    const stopListening = useCallback(() => {
+        // 즉시 listening 상태를 false로 변경
         setListening(false);
-    };
+
+        // MediaRecorder 정리
+        if (mediaRecorderRef.current) {
+            try {
+                if (mediaRecorderRef.current.state === 'recording') {
+                    mediaRecorderRef.current.stop();
+                }
+            } catch {
+                // MediaRecorder 정리 중 에러 무시
+            }
+            mediaRecorderRef.current = null;
+        }
+    }, []);
 
     /**
      * ElevenLabs STT API에 오디오 파일을 전송하여 텍스트를 반환받습니다.
@@ -121,8 +152,7 @@ export default function Dictaphone() {
             const data = await response.json();
             // data.text 속성에 전사된 텍스트가 들어 있습니다.
             return data.text;
-        } catch (error) {
-            console.error('전사 실패:', error);
+        } catch {
             return null;
         }
     };
@@ -143,22 +173,18 @@ export default function Dictaphone() {
             });
             const data = await response.json();
             return data.text;
-        } catch (error) {
-            console.error('API 전송 실패:', error);
+        } catch {
             return null;
         }
     };
 
-    // UI에서 눌렀을 때 녹음 시작
-    const handlePress = (e) => {
-        e.preventDefault();
-        startListening();
-    };
-
-    // UI에서 떼었을 때 녹음 종료
-    const handleRelease = (e) => {
-        e.preventDefault();
-        stopListening();
+    // 버튼 클릭으로 토글
+    const handleButtonClick = () => {
+        if (listening) {
+            stopListening();
+        } else {
+            startListening();
+        }
     };
 
     // 우클릭 메뉴 막기
@@ -168,13 +194,10 @@ export default function Dictaphone() {
 
     return (
         <main className="fullscreen">
-            {/* 스펙트럼 영역: 버튼과 동일한 동작 */}
+            {/* 녹음 버튼 */}
             <div
                 className="spectrum-wrap"
-                onMouseDown={handlePress}
-                onMouseUp={handleRelease}
-                onTouchStart={handlePress}
-                onTouchEnd={handleRelease}
+                onClick={handleButtonClick}
                 onContextMenu={handleContextMenu}
                 style={{
                     cursor: 'pointer',
@@ -184,54 +207,19 @@ export default function Dictaphone() {
                     WebkitTapHighlightColor: 'transparent',
                 }}
             >
-                <AudioCircleSpectrum active={true} height={560} />
+                {/* 녹음 중일 때만 활성 애니메이션 */}
+                <AudioCircleSpectrum active={listening} height={560} />
             </div>
 
-            {/* 녹음 버튼: 누르는 동안 녹음하고 떼면 전송합니다. */}
-            <div style={{ padding: '20px', textAlign: 'center' }}>
-                <button
-                    onMouseDown={handlePress}
-                    onMouseUp={handleRelease}
-                    onTouchStart={handlePress}
-                    onTouchEnd={handleRelease}
-                    onContextMenu={handleContextMenu}
-                    style={{
-                        padding: '15px 30px',
-                        fontSize: '16px',
-                        backgroundColor: listening ? '#34d399' : '#6b7280',
-                        color: 'white',
-                        border: 'none',
-                        borderRadius: '8px',
-                        cursor: 'pointer',
-                        userSelect: 'none',
-                        WebkitUserSelect: 'none',
-                        WebkitTouchCallout: 'none',
-                        WebkitTapHighlightColor: 'transparent',
-                    }}
-                >
-                    {listening ? '음성 인식 중...' : '누르고 말하기'}
-                </button>
-            </div>
-
-            {/* 현재 인식 중인지 여부와 결과를 표시합니다. */}
-            <div className="transcript">
-                {listening ? '녹음 중...' : finalText || '스펙트럼이나 버튼을 누르고 있으면 음성 인식이 시작됩니다.'}
-            </div>
-
-            {/* 대화 기록을 표시합니다. */}
-            <div style={{ padding: '20px', maxHeight: '200px', overflowY: 'auto' }}>
-                {messages.map((msg, idx) => (
-                    <div
-                        key={idx}
-                        style={{
-                            margin: '10px 0',
-                            textAlign: msg.type === 'user' ? 'right' : 'left',
-                            color: msg.type === 'user' ? '#3b82f6' : '#10b981',
-                        }}
-                    >
-                        <strong>{msg.type === 'user' ? '나' : 'AI'}:</strong> {msg.text}
-                    </div>
-                ))}
+            {/* 안내 문구와 결과 표시 */}
+            <div style={{ padding: 16, textAlign: 'center', color: '#6b7280', fontSize: 16 }}>
+                {listening ? '녹음 중... 다시 클릭하여 중지' : '클릭하여 녹음 시작'}
+                {finalText && (
+                    <div style={{ marginTop: 16, color: '#374151', fontSize: 14 }}>인식된 텍스트: {finalText}</div>
+                )}
+                {messages.length > 0 && (
+                    <div style={{ marginTop: 16, color: '#374151', fontSize: 12 }}>대화 {messages.length}개</div>
+                )}
             </div>
         </main>
     );

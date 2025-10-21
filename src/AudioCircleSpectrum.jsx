@@ -1,5 +1,5 @@
 // src/AudioCircleSpectrum.jsx
-import React, { useEffect, useRef } from 'react';
+import React, { useEffect, useRef, useCallback } from 'react';
 
 export default function AudioCircleSpectrum({ active = false, height = 420 }) {
     const wrapperRef = useRef(null);
@@ -18,7 +18,7 @@ export default function AudioCircleSpectrum({ active = false, height = 420 }) {
     const ripplesRef = useRef([]);
 
     // 캔버스 리사이즈(레티나 보정)
-    const resize = () => {
+    const resize = useCallback(() => {
         const wrap = wrapperRef.current;
         const canvas = canvasRef.current;
         if (!wrap || !canvas) return;
@@ -30,74 +30,143 @@ export default function AudioCircleSpectrum({ active = false, height = 420 }) {
         canvas.height = Math.floor(height * dpr);
         const ctx = canvas.getContext('2d');
         ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
-    };
+    }, [height]);
 
     useEffect(() => {
         resize();
         window.addEventListener('resize', resize);
         return () => window.removeEventListener('resize', resize);
-    }, [height]);
+    }, [height, resize]);
 
     useEffect(() => {
         if (!active) {
+            // 즉시 모든 애니메이션 중단
+            if (rafRef.current) {
+                cancelAnimationFrame(rafRef.current);
+                rafRef.current = null;
+            }
+            // 캔버스 완전히 클리어
+            const canvas = canvasRef.current;
+            if (canvas) {
+                const ctx = canvas.getContext('2d');
+                ctx.clearRect(0, 0, canvas.width, canvas.height);
+            }
+            // 모든 리소스 정리
             stop();
             return;
         }
         start();
-        return () => stop();
+        return () => {
+            stop();
+        };
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [active]);
 
     const start = async () => {
-        if (audioCtxRef.current) return;
+        // 이전 리소스가 있다면 먼저 정리
+        if (audioCtxRef.current || streamRef.current) {
+            stop();
+            // 정리 완료를 위해 잠시 대기
+            await new Promise((resolve) => setTimeout(resolve, 100));
+        }
 
-        streamRef.current = await navigator.mediaDevices.getUserMedia({
-            audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
-            video: false,
-        });
+        try {
+            streamRef.current = await navigator.mediaDevices.getUserMedia({
+                audio: { echoCancellation: true, noiseSuppression: true, autoGainControl: true },
+                video: false,
+            });
 
-        const AudioCtx = window.AudioContext || window.webkitAudioContext;
-        const audioCtx = new AudioCtx();
-        audioCtxRef.current = audioCtx;
+            const AudioCtx = window.AudioContext || window.webkitAudioContext;
+            const audioCtx = new AudioCtx();
+            audioCtxRef.current = audioCtx;
 
-        const analyser = audioCtx.createAnalyser();
-        analyser.fftSize = 2048;
-        analyser.smoothingTimeConstant = 0.85;
-        analyserRef.current = analyser;
+            const analyser = audioCtx.createAnalyser();
+            analyser.fftSize = 2048;
+            analyser.smoothingTimeConstant = 0.85;
+            analyserRef.current = analyser;
 
-        sourceRef.current = audioCtx.createMediaStreamSource(streamRef.current);
-        sourceRef.current.connect(analyserRef.current);
+            sourceRef.current = audioCtx.createMediaStreamSource(streamRef.current);
+            sourceRef.current.connect(analyserRef.current);
 
-        freqRef.current = new Uint8Array(analyser.frequencyBinCount);
-        timeRef.current = new Uint8Array(analyser.fftSize);
+            freqRef.current = new Uint8Array(analyser.frequencyBinCount);
+            timeRef.current = new Uint8Array(analyser.fftSize);
 
-        draw();
+            draw();
+        } catch {
+            // 에러 발생 시 정리
+            stop();
+        }
     };
 
     const stop = () => {
-        if (rafRef.current) cancelAnimationFrame(rafRef.current);
-        rafRef.current = null;
+        // 애니메이션 프레임 정리 (즉시 중단)
+        if (rafRef.current) {
+            cancelAnimationFrame(rafRef.current);
+            rafRef.current = null;
+        }
 
+        // 추가 안전장치: 모든 대기 중인 애니메이션 프레임 취소
+        const currentRaf = rafRef.current;
+        if (currentRaf) {
+            cancelAnimationFrame(currentRaf);
+        }
+
+        // 오디오 소스 연결 해제
         try {
-            sourceRef.current && sourceRef.current.disconnect();
-        } catch {}
+            if (sourceRef.current) {
+                sourceRef.current.disconnect();
+            }
+        } catch {
+            // 소스 연결 해제 중 에러 무시
+        }
         sourceRef.current = null;
         analyserRef.current = null;
 
+        // 미디어 스트림 정리
         if (streamRef.current) {
-            streamRef.current.getTracks().forEach((t) => t.stop());
+            try {
+                streamRef.current.getTracks().forEach((track) => {
+                    track.stop();
+                });
+            } catch {
+                // 트랙 정지 중 에러 무시
+            }
             streamRef.current = null;
         }
+
+        // 오디오 컨텍스트 정리
         if (audioCtxRef.current) {
             try {
-                audioCtxRef.current.close();
-            } catch {}
+                if (audioCtxRef.current.state !== 'closed') {
+                    audioCtxRef.current.close();
+                }
+            } catch {
+                // 오디오 컨텍스트 정리 중 에러 무시
+            }
             audioCtxRef.current = null;
         }
+
+        // 리플 배열 정리
         ripplesRef.current = [];
+
+        // 주파수/시간 데이터 배열 정리
+        freqRef.current = null;
+        timeRef.current = null;
+
+        // 캔버스 완전히 클리어
+        const canvas = canvasRef.current;
+        if (canvas) {
+            const ctx = canvas.getContext('2d');
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+        }
     };
 
     const draw = () => {
+        // active가 false면 애니메이션 중단
+        if (!active) {
+            return;
+        }
+
         const canvas = canvasRef.current;
         const ctx = canvas.getContext('2d');
         const analyser = analyserRef.current;
@@ -115,6 +184,11 @@ export default function AudioCircleSpectrum({ active = false, height = 420 }) {
         const maxBarLen = Math.min(w, h) * 0.22; // 막대 최대 길이
 
         const loop = () => {
+            // active가 false면 애니메이션 중단
+            if (!active) {
+                return;
+            }
+
             analyser.getByteFrequencyData(freq);
             analyser.getByteTimeDomainData(time);
 
