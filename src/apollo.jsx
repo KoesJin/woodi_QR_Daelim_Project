@@ -39,7 +39,7 @@ const wsLink = isBrowser
   ? new GraphQLWsLink(
       createClient({
         url: WS_URL,
-        keepAlive: 10 * 1000,
+        keepAlive: 10 * 1000, // 10초 - 서버 ping 주기와 동일
         retryAttempts: Infinity,
         retryWait: () =>
           new Promise((resolve) => setTimeout(resolve, 3 * 1000)),
@@ -56,12 +56,12 @@ const wsLink = isBrowser
                 ) {
                   connectedConfig.activeSocket.close(4408, "Request Timeout");
                 }
-              }, 3 * 1000);
+              }, 15 * 1000);
             }
           },
           pong: (received) => {
             if (received) {
-              clearTimeout(timedOut);
+              clearTimeout(connectedConfig.timeOut);
             }
           },
         },

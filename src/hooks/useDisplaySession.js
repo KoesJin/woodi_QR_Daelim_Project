@@ -17,16 +17,10 @@ export const useDisplaySession = (displayId) => {
 
   const { data: pingData } = useSubscription(SESSION_PING_SUBSCRIPTION, {
     variables: { displayId },
-    onSubscriptionData: ({ subscriptionData }) => {
-      console.log("📨 [Client] Ping 수신:", subscriptionData);
-    },
   });
 
   const { data: expiredData } = useSubscription(SESSION_EXPIRED_SUBSCRIPTION, {
     variables: { displayId },
-    onSubscriptionData: ({ expiredData }) => {
-      console.log("📨 [Client] exipires 수신:", expiredData);
-    },
   });
 
   useEffect(() => {
